@@ -1,0 +1,36 @@
+[package]
+name = "loki-data-forge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../../README.md"
+description = "Loki Data Forge: Cross-platform data recovery toolkit"
+
+[[bin]]
+name = "loki-data-forge"
+path = "src/main.rs"
+
+[features]
+default = ["cli", "gui"]
+cli = []
+gui = ["dep:tauri", "dep:tauri-plugin-fs", "dep:tauri-plugin-dialog", "dep:loki-data-forge-gui"]
+
+[dependencies]
+loki-data-forge-cli = { path = "../../../crates/loki-data-forge-cli" }
+loki-data-forge-core = { path = "../../../crates/loki-data-forge-core" }
+loki-data-forge-gui = { path = "../../../crates/loki-data-forge-gui", optional = true, features = ["tauri"] }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { workspace = true, optional = true }
+tauri-plugin-fs = { workspace = true, optional = true }
+tauri-plugin-dialog = { workspace = true, optional = true }
+
+[build-dependencies]
+tauri-build = { workspace = true }

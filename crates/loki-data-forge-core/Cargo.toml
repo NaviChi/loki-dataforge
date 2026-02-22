@@ -1,0 +1,36 @@
+[package]
+name = "loki-data-forge-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+ext4.workspace = true
+hex.workspace = true
+memmap2.workspace = true
+ntfs.workspace = true
+once_cell.workspace = true
+rayon.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+same-file.workspace = true
+sha2.workspace = true
+smallvec.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+walkdir.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+tempfile = "3.17"

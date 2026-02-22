@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 208 38% 95%;
+  --foreground: 214 49% 12%;
+  --card: 0 0% 100%;
+  --border: 213 34% 82%;
+  --accent: 15 84% 55%;
+  --muted: 210 20% 88%;
+}
+
+:root.dark {
+  --background: 210 44% 10%;
+  --foreground: 210 27% 95%;
+  --card: 211 40% 15%;
+  --border: 209 28% 31%;
+  --accent: 15 84% 55%;
+  --muted: 210 26% 25%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  font-family: 'Space Grotesk', 'Sora', 'IBM Plex Sans', sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+input,
+button,
+select {
+  font: inherit;
+}
