@@ -21,10 +21,6 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             args: "--target x86_64-pc-windows-msvc"
-          - platform: windows-arm64
-            os: windows-latest
-            target: aarch64-pc-windows-msvc
-            args: "--target aarch64-pc-windows-msvc"
           - platform: macos-universal
             os: macos-14
             target: x86_64-apple-darwin,aarch64-apple-darwin
