@@ -12,8 +12,10 @@ readme.workspace = true
 loki-data-forge-core = { path = "../loki-data-forge-core" }
 anyhow.workspace = true
 clap.workspace = true
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+sha2.workspace = true

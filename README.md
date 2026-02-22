@@ -12,7 +12,7 @@ Loki Data Forge is a cross-platform, Rust-first data recovery toolchain for fore
 - Default safety profile: **read-only scanning**, explicit destination for recovery
 
 ## Highlights
-- Quick metadata scan (MFT marker triage in MVP, inode TODO extensions)
+- Quick metadata scan with NTFS MFT active/deleted entry extraction
 - Deep carving engine with rayon-parallel chunk scanning + tokio streaming fallback
 - Built-in signature database (`crates/loki-data-forge-core/data/signatures.json`) with **1225 entries**, including:
   - VMDK (`KDMV` + descriptor)
@@ -24,15 +24,19 @@ Loki Data Forge is a cross-platform, Rust-first data recovery toolchain for fore
   - Valve VPK (`0x55AA1234`, v1/v2 tree parser)
   - WIM, TIB/TIBX, BAK, SQL dump signatures
 - Virtual container mode (`mount`) for VM/backup/archive sources
+- RAID reconstruction command (`reconstruct`) for RAID0/1/5 with missing-member support for RAID5
+- Signature profiles (`strict` default, `broad` opt-in)
+- Encryption marker auto-detection (BitLocker, LUKS, FileVault/CoreStorage, Synology rkey hints)
 - Unified CLI + GUI binary (`loki-data-forge`) with feature flags
 - Synology special mode scaffold (SHR/rkey metadata pathing)
 
 ## MVP Scope in This Build
 Implemented and working now:
-- NTFS quick marker scan (`FILE0`)
+- NTFS MFT metadata scan with active/deleted entry state and filename extraction
 - Deep signature carving (parallel memmap path + async streaming fallback)
 - VMDK detection/descriptor extent parsing
 - VPK v1/v2 entry parsing
+- RAID0/1/5 reconstruction engine + CLI entrypoint
 - Tauri GUI scan/preview/recover flow
 
 Planned next (scaffolded with TODO markers):
@@ -59,18 +63,45 @@ Loki Data Forge/
 ```bash
 # Hybrid scan with container inspection
 loki-data-forge scan \
-  --drive /dev/sda \
+  --source /dev/sda \
   --mode hybrid \
   --threads 32 \
   --chunk-size 8388608 \
   --max-carve-size 16777216 \
   --report scan.json
 
+# Multi-source RAID/NAS style scan
+loki-data-forge scan \
+  --source ./member0.img \
+  --source ./member1.img \
+  --source ./member2.img \
+  --mode deep \
+  --report raid-scan.json
+
 # Deep scan + direct recovery to different destination
-loki-data-forge scan --drive ./disk.img --mode deep --output /recovery --overwrite
+loki-data-forge scan --source ./disk.img --mode deep --output /recovery --overwrite
+
+# Strict container parsing and broad signature profile
+loki-data-forge scan --source ./disk.img --mode deep --strict-containers --signature-profile broad
+
+# Encryption detect/unlock policy controls
+loki-data-forge scan --source ./disk.img --encryption-detect-only
+loki-data-forge scan --source ./disk.img --unlock-with bitlocker
+
+# Optional bypass mode (disabled by default, audit logged)
+loki-data-forge scan --source ./disk.img --enable-bypass --case-id CASE-123 --legal-authority "Warrant-XYZ"
 
 # Recover from existing report
 loki-data-forge recover --report scan.json --source ./disk.img --output /recovery
+
+# Reconstruct RAID5 (use 'missing' for unavailable member slots)
+loki-data-forge reconstruct \
+  --mode raid5 \
+  --stripe-size 65536 \
+  --member ./member0.img \
+  --member missing \
+  --member ./member2.img \
+  --output ./reconstructed.img
 
 # Virtual mount a container and list entries
 loki-data-forge mount --container ./backup.vmdk --json
@@ -83,6 +114,11 @@ loki-data-forge mount --container ./backup.vmdk --json
   - `Add Missing Drives`
   - `Skip & Continue (Degraded Mode)`
 - Degraded mode continues scanning with available members and marks recovery as potentially incomplete.
+
+### Safety Notes
+- `scan` defaults to `--signature-profile strict` and `container_error_policy=warn_and_skip`.
+- `--strict-containers` upgrades malformed container parsing to hard-fail behavior.
+- Unlock and bypass requests are append-audited with signed hash-chain metadata in `.loki-data-forge-audit.log`.
 
 ## GUI
 ```bash

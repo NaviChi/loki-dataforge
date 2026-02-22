@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::{LokiDataForgeError, Result};
-use crate::models::SignatureDefinition;
+use crate::models::{SignatureDefinition, SignatureProfile};
 
 static BUILTIN_SIGNATURES: &str = include_str!("../data/signatures.json");
 
@@ -83,8 +83,22 @@ impl SignatureSet {
     }
 
     pub fn builtin() -> Result<Self> {
+        Self::builtin_for_profile(SignatureProfile::Strict)
+    }
+
+    pub fn builtin_for_profile(profile: SignatureProfile) -> Result<Self> {
         let definitions: Vec<SignatureDefinition> = serde_json::from_str(BUILTIN_SIGNATURES)?;
-        Self::from_definitions(definitions)
+        let filtered = match profile {
+            SignatureProfile::Strict => definitions
+                .into_iter()
+                .filter(|def| {
+                    !def.id.starts_with("sig-generated-")
+                        && !def.category.eq_ignore_ascii_case("generic")
+                })
+                .collect::<Vec<_>>(),
+            SignatureProfile::Broad => definitions,
+        };
+        Self::from_definitions(filtered)
     }
 
     pub fn from_json_file(path: &Path) -> Result<Self> {

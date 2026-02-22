@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -25,6 +25,9 @@ pub enum Commands {
     /// Recover files from an existing scan report
     Recover(RecoverArgs),
 
+    /// Reconstruct a RAID virtual image from member devices/images
+    Reconstruct(ReconstructArgs),
+
     /// Virtual-mount container formats like VMDK/VPK/OVA and inspect entries
     Mount(MountArgs),
 
@@ -47,7 +50,14 @@ pub enum Commands {
 #[derive(Debug, Args)]
 pub struct ScanArgs {
     #[arg(long = "drive", value_name = "PATH")]
-    pub drive: PathBuf,
+    pub drive: Option<PathBuf>,
+
+    #[arg(
+        long = "source",
+        value_name = "PATH",
+        action = ArgAction::Append
+    )]
+    pub sources: Vec<PathBuf>,
 
     #[arg(long, default_value = "hybrid", value_parser = ["quick", "deep", "hybrid"])]
     pub mode: String,
@@ -80,6 +90,34 @@ pub struct ScanArgs {
     pub skip_containers: bool,
 
     #[arg(long)]
+    pub strict_containers: bool,
+
+    #[arg(long, default_value = "strict", value_parser = ["strict", "broad"])]
+    pub signature_profile: String,
+
+    #[arg(long)]
+    pub encryption_detect_only: bool,
+
+    #[arg(long, value_name = "PROVIDER")]
+    pub unlock_with: Option<String>,
+
+    #[arg(long)]
+    pub enable_bypass: bool,
+
+    #[arg(long, value_name = "CASE_ID")]
+    pub case_id: Option<String>,
+
+    #[arg(long, value_name = "AUTHORITY")]
+    pub legal_authority: Option<String>,
+
+    #[arg(
+        long,
+        default_value = "hybrid",
+        value_parser = ["native-only", "hybrid", "external-preferred"]
+    )]
+    pub adapter_policy: String,
+
+    #[arg(long)]
     pub quiet: bool,
 }
 
@@ -99,6 +137,34 @@ pub struct RecoverArgs {
 
     #[arg(long)]
     pub preserve_paths: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ReconstructArgs {
+    #[arg(long, value_parser = ["raid0", "raid1", "raid5"])]
+    pub mode: String,
+
+    #[arg(long, default_value_t = 64 * 1024)]
+    pub stripe_size: u64,
+
+    #[arg(long, value_name = "PATH_OR_MISSING", action = ArgAction::Append)]
+    pub member: Vec<String>,
+
+    #[arg(
+        long,
+        default_value = "left_symmetric",
+        value_parser = [
+            "left_symmetric",
+            "right_symmetric",
+            "left_asymmetric",
+            "right_asymmetric",
+            "unknown"
+        ]
+    )]
+    pub parity_layout: String,
+
+    #[arg(long, value_name = "OUTPUT")]
+    pub output: PathBuf,
 }
 
 #[derive(Debug, Args)]

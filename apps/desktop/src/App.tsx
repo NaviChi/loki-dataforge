@@ -17,6 +17,17 @@ import {
   type VirtualContainer,
 } from './lib/api';
 
+function isTauriRuntime(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const runtimeWindow = window as Window & {
+    __TAURI_INTERNALS__?: unknown;
+    isTauri?: boolean;
+  };
+  return Boolean(runtimeWindow.__TAURI_INTERNALS__) || Boolean(runtimeWindow.isTauri);
+}
+
 function errorMessage(error: unknown): string {
   if (typeof error === 'string') {
     return error;
@@ -41,6 +52,15 @@ export function App() {
   const [maxCarveSize, setMaxCarveSize] = useState(16 * 1024 * 1024);
   const [synologyMode, setSynologyMode] = useState(false);
   const [includeContainers, setIncludeContainers] = useState(true);
+  const [strictContainers, setStrictContainers] = useState(false);
+  const [signatureProfile, setSignatureProfile] = useState<'strict' | 'broad'>('strict');
+  const [adapterPolicy, setAdapterPolicy] = useState<
+    'native-only' | 'hybrid' | 'external-preferred'
+  >('hybrid');
+  const [unlockProvider, setUnlockProvider] = useState('');
+  const [enableBypass, setEnableBypass] = useState(false);
+  const [caseId, setCaseId] = useState('');
+  const [legalAuthority, setLegalAuthority] = useState('');
 
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [report, setReport] = useState<ScanReport | null>(null);
@@ -56,21 +76,52 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    const unlisten = listen<ScanProgress>('scan-progress', (event) => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    let canceled = false;
+    let cleanup: (() => void) | null = null;
+    void listen<ScanProgress>('scan-progress', (event) => {
       setProgress(event.payload);
-    });
-
+    })
+      .then((unlisten) => {
+        if (canceled) {
+          void unlisten();
+          return;
+        }
+        cleanup = unlisten;
+      })
+      .catch(() => {});
     return () => {
-      void unlisten.then((f) => f());
+      canceled = true;
+      if (cleanup) {
+        void cleanup();
+      }
     };
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<RaidDetectionReport>('raid-detection', (event) => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    let canceled = false;
+    let cleanup: (() => void) | null = null;
+    void listen<RaidDetectionReport>('raid-detection', (event) => {
       setRaidDetection(event.payload);
-    });
+    })
+      .then((unlisten) => {
+        if (canceled) {
+          void unlisten();
+          return;
+        }
+        cleanup = unlisten;
+      })
+      .catch(() => {});
     return () => {
-      void unlisten.then((f) => f());
+      canceled = true;
+      if (cleanup) {
+        void cleanup();
+      }
     };
   }, []);
 
@@ -104,6 +155,14 @@ export function App() {
         synology_mode: synologyMode,
         include_container_scan: includeContainers,
         degraded_mode: degradedMode,
+        strict_containers: strictContainers,
+        signature_profile: signatureProfile,
+        adapter_policy: adapterPolicy,
+        encryption_detect_only: unlockProvider.trim().length === 0,
+        unlock_with: unlockProvider.trim() ? unlockProvider.trim() : undefined,
+        enable_bypass: enableBypass,
+        case_id: caseId.trim() ? caseId.trim() : undefined,
+        legal_authority: legalAuthority.trim() ? legalAuthority.trim() : undefined,
       });
 
       const mounted = includeContainers
@@ -255,6 +314,73 @@ export function App() {
                   <input type="checkbox" checked={includeContainers} onChange={(e) => setIncludeContainers(e.target.checked)} />
                   Include VM/backup container scan
                 </label>
+                <label className="flex items-center gap-2 text-foreground/80">
+                  <input type="checkbox" checked={strictContainers} onChange={(e) => setStrictContainers(e.target.checked)} />
+                  Strict container parsing (fail on malformed containers)
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-foreground/80">Signature profile</span>
+                  <select
+                    value={signatureProfile}
+                    onChange={(e) => setSignatureProfile(e.target.value as 'strict' | 'broad')}
+                    className="w-full rounded-xl border border-border bg-black/20 px-3 py-2 outline-none"
+                  >
+                    <option value="strict">strict (curated)</option>
+                    <option value="broad">broad (research)</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-foreground/80">Adapter policy</span>
+                  <select
+                    value={adapterPolicy}
+                    onChange={(e) =>
+                      setAdapterPolicy(
+                        e.target.value as 'native-only' | 'hybrid' | 'external-preferred',
+                      )
+                    }
+                    className="w-full rounded-xl border border-border bg-black/20 px-3 py-2 outline-none"
+                  >
+                    <option value="hybrid">hybrid (default)</option>
+                    <option value="native-only">native-only</option>
+                    <option value="external-preferred">external-preferred</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-foreground/80">Unlock provider (optional)</span>
+                  <input
+                    type="text"
+                    value={unlockProvider}
+                    onChange={(e) => setUnlockProvider(e.target.value)}
+                    placeholder="bitlocker, luks, filevault..."
+                    className="w-full rounded-xl border border-border bg-black/20 px-3 py-2 outline-none"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-foreground/80">
+                  <input type="checkbox" checked={enableBypass} onChange={(e) => setEnableBypass(e.target.checked)} />
+                  Enable bypass mode (audit logged, requires metadata)
+                </label>
+                {enableBypass && (
+                  <>
+                    <label className="block">
+                      <span className="mb-1 block text-foreground/80">Case ID</span>
+                      <input
+                        type="text"
+                        value={caseId}
+                        onChange={(e) => setCaseId(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-black/20 px-3 py-2 outline-none"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-foreground/80">Legal authority</span>
+                      <input
+                        type="text"
+                        value={legalAuthority}
+                        onChange={(e) => setLegalAuthority(e.target.value)}
+                        className="w-full rounded-xl border border-border bg-black/20 px-3 py-2 outline-none"
+                      />
+                    </label>
+                  </>
+                )}
               </div>
             )}
 

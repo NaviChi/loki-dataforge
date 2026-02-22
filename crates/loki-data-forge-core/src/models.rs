@@ -11,9 +11,78 @@ pub enum ScanMode {
     Hybrid,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ContainerErrorPolicy {
+    #[default]
+    WarnAndSkip,
+    StrictFail,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SignatureProfile {
+    #[default]
+    Strict,
+    Broad,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EncryptionPolicy {
+    #[default]
+    DetectOnly,
+    UnlockWithProvider {
+        provider: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AdapterPolicy {
+    NativeOnly,
+    #[default]
+    Hybrid,
+    ExternalPreferred,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VolumeLayer {
+    #[default]
+    Physical,
+    RaidVirtual,
+    EncryptedVolume,
+    Filesystem,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EncryptionState {
+    #[default]
+    Unknown,
+    Unencrypted,
+    EncryptedDetected,
+    Unlocked,
+    BypassRequired,
+    BypassAttempted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ReconstructionContext {
+    #[serde(default)]
+    pub volume_layer: VolumeLayer,
+    #[serde(default)]
+    pub reconstructed_path: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanOptions {
     pub source: PathBuf,
+    #[serde(default)]
+    pub sources: Vec<PathBuf>,
     pub output: Option<PathBuf>,
     pub mode: ScanMode,
     pub threads: usize,
@@ -22,12 +91,27 @@ pub struct ScanOptions {
     pub read_only: bool,
     pub synology_mode: bool,
     pub include_container_scan: bool,
+    #[serde(default)]
+    pub container_error_policy: ContainerErrorPolicy,
+    #[serde(default)]
+    pub signature_profile: SignatureProfile,
+    #[serde(default)]
+    pub encryption_policy: EncryptionPolicy,
+    #[serde(default)]
+    pub adapter_policy: AdapterPolicy,
+    #[serde(default)]
+    pub enable_bypass: bool,
+    #[serde(default)]
+    pub case_id: Option<String>,
+    #[serde(default)]
+    pub legal_authority: Option<String>,
 }
 
 impl Default for ScanOptions {
     fn default() -> Self {
         Self {
             source: PathBuf::new(),
+            sources: Vec::new(),
             output: None,
             mode: ScanMode::Hybrid,
             threads: std::thread::available_parallelism()
@@ -38,6 +122,13 @@ impl Default for ScanOptions {
             read_only: true,
             synology_mode: false,
             include_container_scan: true,
+            container_error_policy: ContainerErrorPolicy::WarnAndSkip,
+            signature_profile: SignatureProfile::Strict,
+            encryption_policy: EncryptionPolicy::DetectOnly,
+            adapter_policy: AdapterPolicy::Hybrid,
+            enable_bypass: false,
+            case_id: None,
+            legal_authority: None,
         }
     }
 }
@@ -57,12 +148,22 @@ pub struct FoundFile {
     pub extension: String,
     pub signature_id: String,
     pub source_path: PathBuf,
+    #[serde(default)]
+    pub source_fingerprint: String,
+    #[serde(default)]
+    pub evidence_path: PathBuf,
     pub container_path: Option<String>,
     pub offset: u64,
     pub size: u64,
     pub confidence: f32,
+    #[serde(default = "default_validation_score")]
+    pub validation_score: f32,
     pub category: String,
     pub encrypted: bool,
+    #[serde(default)]
+    pub encryption_state: EncryptionState,
+    #[serde(default)]
+    pub reconstruction_context: Option<ReconstructionContext>,
     pub notes: Option<String>,
 }
 
@@ -80,6 +181,8 @@ pub struct ScanReport {
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub source: PathBuf,
+    #[serde(default)]
+    pub sources: Vec<PathBuf>,
     pub mode: ScanMode,
     pub findings: Vec<FoundFile>,
     pub warnings: Vec<String>,
@@ -94,6 +197,10 @@ pub struct ScanMetadata {
     pub deep_hits: usize,
     pub container_hits: usize,
     pub container_type: Option<ContainerType>,
+    #[serde(default)]
+    pub volume_layers: Vec<VolumeLayer>,
+    #[serde(default)]
+    pub adapter_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,4 +269,8 @@ pub enum EncryptionProfile {
     Luks,
     FileVault,
     SynologyRkey,
+}
+
+fn default_validation_score() -> f32 {
+    0.0
 }

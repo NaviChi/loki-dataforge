@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -41,11 +41,21 @@ fn recover_files_with_policy(
     options: &RecoveryOptions,
     enforce_separate_device: bool,
 ) -> Result<Vec<RecoveredFile>> {
-    ensure_safe_destination(
-        &options.source,
-        &options.destination,
-        enforce_separate_device,
-    )?;
+    let mut safety_sources = HashSet::new();
+    for finding in findings {
+        let source_path = if finding.source_path.exists() {
+            finding.source_path.clone()
+        } else {
+            options.source.clone()
+        };
+        safety_sources.insert(source_path);
+    }
+    if safety_sources.is_empty() {
+        safety_sources.insert(options.source.clone());
+    }
+    for source in safety_sources {
+        ensure_safe_destination(&source, &options.destination, enforce_separate_device)?;
+    }
     std::fs::create_dir_all(&options.destination)?;
 
     let manifest_path = options.destination.join(RECOVERY_MANIFEST_FILE);
@@ -67,8 +77,8 @@ fn recover_files_with_policy(
             return Err(LokiDataForgeError::MissingPath(source_path));
         }
 
-        let filename = sanitize_name(&item.display_name, &item.extension);
-        let output_path = options.destination.join(filename);
+        let output_path = build_output_path(item, &options.destination, options.preserve_paths);
+        let manifest_key = manifest_key_for_item(item);
 
         if let Some(parent) = output_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -83,7 +93,11 @@ fn recover_files_with_policy(
             continue;
         }
 
-        let existing_manifest_entry = manifest.entries.get(&item.id).cloned();
+        let existing_manifest_entry = manifest
+            .entries
+            .get(&manifest_key)
+            .cloned()
+            .or_else(|| manifest.entries.get(&item.id).cloned());
         let mut resume_written = 0u64;
 
         if let Some(entry) = &existing_manifest_entry {
@@ -155,7 +169,7 @@ fn recover_files_with_policy(
                     sha256: None,
                     updated_at: Utc::now().to_rfc3339(),
                 };
-                manifest.entries.insert(item.id.clone(), entry);
+                manifest.entries.insert(manifest_key.clone(), entry);
                 save_manifest(&manifest_path, &manifest)?;
 
                 if is_disk_full(&err) {
@@ -178,7 +192,7 @@ fn recover_files_with_policy(
 
         let sha256 = format!("{:x}", hasher.finalize());
         manifest.entries.insert(
-            item.id.clone(),
+            manifest_key.clone(),
             RecoveryManifestEntry {
                 source_path: source_path.to_string_lossy().to_string(),
                 offset: item.offset,
@@ -190,6 +204,9 @@ fn recover_files_with_policy(
                 updated_at: Utc::now().to_rfc3339(),
             },
         );
+        if manifest_key != item.id {
+            manifest.entries.remove(&item.id);
+        }
 
         recovered.push(RecoveredFile {
             source_id: item.id.clone(),
@@ -357,12 +374,96 @@ fn sanitize_name(name: &str, ext: &str) -> String {
     }
 }
 
+fn manifest_key_for_item(item: &FoundFile) -> String {
+    format!(
+        "{}|{}|{}|{}|{}",
+        if item.source_fingerprint.is_empty() {
+            "unknown-source"
+        } else {
+            &item.source_fingerprint
+        },
+        item.container_path.clone().unwrap_or_default(),
+        item.offset,
+        item.signature_id,
+        item.id
+    )
+}
+
+fn build_output_path(item: &FoundFile, destination: &Path, preserve_paths: bool) -> PathBuf {
+    let filename = sanitize_name(&item.display_name, &item.extension);
+    if !preserve_paths {
+        return destination.join(filename);
+    }
+
+    let source_root = sanitize_component(if item.source_fingerprint.is_empty() {
+        "unknown_source"
+    } else {
+        &item.source_fingerprint
+    });
+
+    let mut out = destination.join(source_root);
+    let preserved_hint = item
+        .reconstruction_context
+        .as_ref()
+        .and_then(|ctx| ctx.reconstructed_path.clone())
+        .or_else(|| item.container_path.clone());
+
+    if let Some(hint) = preserved_hint {
+        let rel = sanitize_relative_path(&hint);
+        if rel.as_os_str().is_empty() {
+            out.push(filename);
+            return out;
+        }
+
+        let last_is_file = rel
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.contains('.'))
+            .unwrap_or(false);
+
+        out.push(&rel);
+        if !last_is_file {
+            out.push(filename);
+        }
+        return out;
+    }
+
+    out.push(filename);
+    out
+}
+
+fn sanitize_relative_path(value: &str) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in Path::new(value).components() {
+        if let Component::Normal(part) = component {
+            let clean = sanitize_component(&part.to_string_lossy());
+            if !clean.is_empty() {
+                out.push(clean);
+            }
+        }
+    }
+    out
+}
+
+fn sanitize_component(component: &str) -> String {
+    component
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;
 
     use super::recover_files_with_policy;
-    use crate::models::{FoundFile, RecoveryOptions};
+    use crate::models::{EncryptionState, FoundFile, RecoveryOptions};
 
     #[test]
     fn resumes_recovery_from_manifest_partial_file() {
@@ -380,12 +481,17 @@ mod tests {
             extension: "bin".to_string(),
             signature_id: "test".to_string(),
             source_path: source.clone(),
+            source_fingerprint: "test-source".to_string(),
+            evidence_path: source.clone(),
             container_path: None,
             offset: 0,
             size: payload.len() as u64,
             confidence: 1.0,
+            validation_score: 1.0,
             category: "test".to_string(),
             encrypted: false,
+            encryption_state: EncryptionState::Unencrypted,
+            reconstruction_context: None,
             notes: None,
         };
 
@@ -432,5 +538,122 @@ mod tests {
 
         let manifest_data = std::fs::read_to_string(&manifest_path).expect("manifest");
         assert!(manifest_data.contains("\"completed\": true"));
+    }
+
+    #[test]
+    fn preserve_paths_writes_under_source_fingerprint_root() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let source = dir.path().join("source.img");
+        let destination = dir.path().join("dest");
+        std::fs::create_dir_all(&destination).expect("dest dir");
+        std::fs::write(&source, b"hello-world").expect("source");
+
+        let finding = FoundFile {
+            id: "path-1".to_string(),
+            display_name: "ignored_name".to_string(),
+            extension: "txt".to_string(),
+            signature_id: "test".to_string(),
+            source_path: source.clone(),
+            source_fingerprint: "src-fp-001".to_string(),
+            evidence_path: source.clone(),
+            container_path: Some("folderA/folderB/recovered.txt".to_string()),
+            offset: 0,
+            size: 11,
+            confidence: 1.0,
+            validation_score: 1.0,
+            category: "test".to_string(),
+            encrypted: false,
+            encryption_state: EncryptionState::Unencrypted,
+            reconstruction_context: None,
+            notes: None,
+        };
+
+        let options = RecoveryOptions {
+            source: source.clone(),
+            destination: destination.clone(),
+            overwrite: false,
+            preserve_paths: true,
+        };
+
+        let recovered =
+            recover_files_with_policy(&[finding], &options, false).expect("recovery with paths");
+        assert_eq!(recovered.len(), 1);
+
+        let expected = destination
+            .join("src-fp-001")
+            .join("folderA")
+            .join("folderB")
+            .join("recovered.txt");
+        assert_eq!(recovered[0].output_path, expected);
+        let data = std::fs::read(expected).expect("recovered bytes");
+        assert_eq!(data, b"hello-world");
+    }
+
+    #[test]
+    fn manifest_keys_do_not_collide_for_duplicate_finding_ids() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let source_a = dir.path().join("source_a.img");
+        let source_b = dir.path().join("source_b.img");
+        let destination = dir.path().join("dest");
+        std::fs::create_dir_all(&destination).expect("dest dir");
+        std::fs::write(&source_a, b"AAAA").expect("source a");
+        std::fs::write(&source_b, b"BBBB").expect("source b");
+
+        let finding_a = FoundFile {
+            id: "duplicate-id".to_string(),
+            display_name: "sample".to_string(),
+            extension: "bin".to_string(),
+            signature_id: "sig".to_string(),
+            source_path: source_a.clone(),
+            source_fingerprint: "fp-a".to_string(),
+            evidence_path: source_a.clone(),
+            container_path: None,
+            offset: 0,
+            size: 4,
+            confidence: 1.0,
+            validation_score: 1.0,
+            category: "test".to_string(),
+            encrypted: false,
+            encryption_state: EncryptionState::Unencrypted,
+            reconstruction_context: None,
+            notes: None,
+        };
+        let finding_b = FoundFile {
+            id: "duplicate-id".to_string(),
+            display_name: "sample".to_string(),
+            extension: "bin".to_string(),
+            signature_id: "sig".to_string(),
+            source_path: source_b.clone(),
+            source_fingerprint: "fp-b".to_string(),
+            evidence_path: source_b.clone(),
+            container_path: None,
+            offset: 0,
+            size: 4,
+            confidence: 1.0,
+            validation_score: 1.0,
+            category: "test".to_string(),
+            encrypted: false,
+            encryption_state: EncryptionState::Unencrypted,
+            reconstruction_context: None,
+            notes: None,
+        };
+
+        let options = RecoveryOptions {
+            source: source_a,
+            destination: destination.clone(),
+            overwrite: false,
+            preserve_paths: true,
+        };
+
+        let recovered = recover_files_with_policy(&[finding_a, finding_b], &options, false)
+            .expect("recovery with duplicate ids");
+        assert_eq!(recovered.len(), 2);
+
+        let manifest_path = destination.join(super::RECOVERY_MANIFEST_FILE);
+        let manifest_data = std::fs::read_to_string(manifest_path).expect("manifest read");
+        let manifest: serde_json::Value =
+            serde_json::from_str(&manifest_data).expect("manifest json");
+        let entries = manifest["entries"].as_object().expect("entries object");
+        assert_eq!(entries.len(), 2);
     }
 }

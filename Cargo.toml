@@ -43,7 +43,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 walkdir = "2.5"
 zip = { version = "2.2", default-features = false, features = ["deflate", "bzip2", "lzma"] }
 ext4 = "0.9"
-uuid = { version = "1.13", features = ["v4", "serde"] }
+uuid = { version = "1.13", features = ["v4", "v5", "serde"] }
 tauri = { version = "2", default-features = false, features = ["wry"] }
 tauri-build = { version = "2" }
 tauri-plugin-fs = "2"

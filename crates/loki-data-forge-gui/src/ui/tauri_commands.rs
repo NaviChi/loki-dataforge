@@ -10,7 +10,8 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::RwLock;
 
 use loki_data_forge_core::models::{
-    ProgressUpdate, RecoveryOptions, ScanMode, ScanOptions, ScanReport, VirtualContainer,
+    AdapterPolicy, ContainerErrorPolicy, EncryptionPolicy, ProgressUpdate, RecoveryOptions,
+    ScanMode, ScanOptions, ScanReport, SignatureProfile, VirtualContainer,
 };
 use loki_data_forge_core::raid::{RaidDetectionReport, detect_raid_configuration};
 use loki_data_forge_core::recovery::recover_files;
@@ -33,6 +34,14 @@ pub struct ScanRequest {
     pub synology_mode: Option<bool>,
     pub include_container_scan: Option<bool>,
     pub degraded_mode: Option<bool>,
+    pub strict_containers: Option<bool>,
+    pub signature_profile: Option<String>,
+    pub encryption_detect_only: Option<bool>,
+    pub unlock_with: Option<String>,
+    pub enable_bypass: Option<bool>,
+    pub case_id: Option<String>,
+    pub legal_authority: Option<String>,
+    pub adapter_policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +92,57 @@ pub async fn scan_command(
             let _ = app.emit("scan-progress", update);
         })
     };
+
+    if request.enable_bypass.unwrap_or(false)
+        && (request
+            .case_id
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+            || request
+                .legal_authority
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .is_empty())
+    {
+        return Err("Bypass mode requires both case_id and legal_authority metadata".to_string());
+    }
+
+    let signature_profile = match request
+        .signature_profile
+        .as_deref()
+        .unwrap_or("strict")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "broad" => SignatureProfile::Broad,
+        _ => SignatureProfile::Strict,
+    };
+
+    let container_error_policy = if request.strict_containers.unwrap_or(false) {
+        ContainerErrorPolicy::StrictFail
+    } else {
+        ContainerErrorPolicy::WarnAndSkip
+    };
+
+    if request.encryption_detect_only.unwrap_or(false) && request.unlock_with.is_some() {
+        return Err(
+            "unlock_with cannot be combined with encryption_detect_only in the same scan"
+                .to_string(),
+        );
+    }
+
+    let encryption_policy = if request.encryption_detect_only.unwrap_or(false) {
+        EncryptionPolicy::DetectOnly
+    } else {
+        match request.unlock_with.clone() {
+            Some(provider) => EncryptionPolicy::UnlockWithProvider { provider },
+            None => EncryptionPolicy::DetectOnly,
+        }
+    };
+
     let configured_threads = request.threads.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .map(|n| n.get())
@@ -90,11 +150,23 @@ pub async fn scan_command(
     });
     let configured_chunk_size = request.chunk_size.unwrap_or(8 * 1024 * 1024);
     let configured_max_carve = request.max_carve_size.unwrap_or(16 * 1024 * 1024);
+    let adapter_policy = match request
+        .adapter_policy
+        .as_deref()
+        .unwrap_or("hybrid")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "native-only" => AdapterPolicy::NativeOnly,
+        "external-preferred" => AdapterPolicy::ExternalPreferred,
+        _ => AdapterPolicy::Hybrid,
+    };
 
     let mut reports = Vec::new();
     for source in &source_paths {
         let options = ScanOptions {
             source: source.clone(),
+            sources: vec![source.clone()],
             output: None,
             mode,
             threads: configured_threads.max(1),
@@ -103,6 +175,13 @@ pub async fn scan_command(
             read_only: true,
             synology_mode: request.synology_mode.unwrap_or(false),
             include_container_scan: request.include_container_scan.unwrap_or(true),
+            container_error_policy,
+            signature_profile,
+            encryption_policy: encryption_policy.clone(),
+            adapter_policy,
+            enable_bypass: request.enable_bypass.unwrap_or(false),
+            case_id: request.case_id.clone(),
+            legal_authority: request.legal_authority.clone(),
         };
 
         reports.push(
@@ -408,6 +487,7 @@ fn merge_reports(
 
     for report in iter {
         merged.finished_at = merged.finished_at.max(report.finished_at);
+        merged.sources.extend(report.sources);
         merged.warnings.extend(report.warnings);
         merged.findings.extend(report.findings);
         merged.metadata.bytes_scanned += report.metadata.bytes_scanned;
@@ -415,10 +495,36 @@ fn merge_reports(
         merged.metadata.deep_hits += report.metadata.deep_hits;
         merged.metadata.container_hits += report.metadata.container_hits;
         merged.metadata.elapsed_ms += report.metadata.elapsed_ms;
+        merged
+            .metadata
+            .volume_layers
+            .extend(report.metadata.volume_layers);
         if merged.metadata.container_type.is_none() {
             merged.metadata.container_type = report.metadata.container_type;
         }
     }
+
+    merged.sources =
+        merged
+            .sources
+            .into_iter()
+            .fold(Vec::<std::path::PathBuf>::new(), |mut acc, path| {
+                if !acc.iter().any(|existing| *existing == path) {
+                    acc.push(path);
+                }
+                acc
+            });
+    merged.metadata.volume_layers =
+        merged
+            .metadata
+            .volume_layers
+            .into_iter()
+            .fold(Vec::new(), |mut acc, layer| {
+                if !acc.iter().any(|existing| *existing == layer) {
+                    acc.push(layer);
+                }
+                acc
+            });
 
     merged.findings.sort_by(|a, b| {
         (

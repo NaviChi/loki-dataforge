@@ -6,12 +6,27 @@ export interface FoundFile {
   extension: string;
   signature_id: string;
   source_path: string;
+  source_fingerprint: string;
+  evidence_path: string;
   container_path?: string;
   offset: number;
   size: number;
   confidence: number;
+  validation_score: number;
   category: string;
   encrypted: boolean;
+  encryption_state:
+    | 'unknown'
+    | 'unencrypted'
+    | 'encrypted_detected'
+    | 'unlocked'
+    | 'bypass_required'
+    | 'bypass_attempted';
+  reconstruction_context?: {
+    volume_layer: 'physical' | 'raid_virtual' | 'encrypted_volume' | 'filesystem';
+    reconstructed_path?: string;
+    notes?: string;
+  };
   notes?: string;
 }
 
@@ -20,6 +35,7 @@ export interface ScanReport {
   started_at: string;
   finished_at: string;
   source: string;
+  sources: string[];
   mode: 'quick' | 'deep' | 'hybrid';
   findings: FoundFile[];
   warnings: string[];
@@ -30,6 +46,8 @@ export interface ScanReport {
     deep_hits: number;
     container_hits: number;
     container_type?: string;
+    volume_layers: Array<'physical' | 'raid_virtual' | 'encrypted_volume' | 'filesystem'>;
+    adapter_capabilities: string[];
   };
 }
 
@@ -99,6 +117,14 @@ export async function runScan(payload: {
   synology_mode: boolean;
   include_container_scan: boolean;
   degraded_mode?: boolean;
+  strict_containers?: boolean;
+  signature_profile?: 'strict' | 'broad';
+  encryption_detect_only?: boolean;
+  unlock_with?: string;
+  enable_bypass?: boolean;
+  case_id?: string;
+  legal_authority?: string;
+  adapter_policy?: 'native-only' | 'hybrid' | 'external-preferred';
 }): Promise<ScanReport> {
   return invoke<ScanReport>('scan_command', { request: payload });
 }

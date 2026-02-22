@@ -10,6 +10,7 @@ use crate::progress::{ProgressCallback, ProgressTracker};
 pub async fn quick_scan(
     source: &Path,
     options: &ScanOptions,
+    source_fingerprint: &str,
     cb: Option<ProgressCallback>,
 ) -> Result<Vec<FoundFile>> {
     let mut file = tokio::fs::File::open(source).await?;
@@ -36,7 +37,13 @@ pub async fn quick_scan(
         combined.extend_from_slice(&chunk);
 
         let combined_start = offset.saturating_sub(carry.len() as u64);
-        findings.extend(parse_mft_markers(&combined, combined_start, source));
+        findings.extend(parse_mft_markers(
+            &combined,
+            combined_start,
+            source,
+            source_fingerprint,
+            options.mode,
+        ));
 
         if combined.len() > 16 {
             carry = combined[combined.len() - 16..].to_vec();

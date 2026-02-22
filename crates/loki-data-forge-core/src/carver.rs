@@ -4,15 +4,22 @@ use std::fs::File;
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 
+use crate::classifier::{FragmentSample, default_classifier};
 use crate::error::Result;
-use crate::models::{FoundFile, ScanOptions};
+use crate::identity::build_finding_id;
+use crate::models::{
+    EncryptionState, FoundFile, ReconstructionContext, ScanMode, ScanOptions, SignatureProfile,
+    VolumeLayer,
+};
 use crate::progress::{ProgressCallback, ProgressTracker};
 use crate::signatures::SignatureSet;
+use crate::validators::structural_validation_score;
 
 pub async fn deep_carve(
     source: &Path,
     options: &ScanOptions,
     signatures: &SignatureSet,
+    source_fingerprint: &str,
     cb: Option<ProgressCallback>,
 ) -> Result<Vec<FoundFile>> {
     let metadata = std::fs::metadata(source)?;
@@ -20,11 +27,21 @@ pub async fn deep_carve(
 
     if metadata.is_file() {
         match try_memmap(source) {
-            Ok(mapped) => deep_carve_mmap(source, mapped, total, options, signatures, cb),
-            Err(_) => deep_carve_streaming(source, options, signatures, cb).await,
+            Ok(mapped) => deep_carve_mmap(
+                source,
+                mapped,
+                total,
+                options,
+                signatures,
+                source_fingerprint,
+                cb,
+            ),
+            Err(_) => {
+                deep_carve_streaming(source, options, signatures, source_fingerprint, cb).await
+            }
         }
     } else {
-        deep_carve_streaming(source, options, signatures, cb).await
+        deep_carve_streaming(source, options, signatures, source_fingerprint, cb).await
     }
 }
 
@@ -34,6 +51,7 @@ fn deep_carve_mmap(
     total: u64,
     options: &ScanOptions,
     signatures: &SignatureSet,
+    source_fingerprint: &str,
     cb: Option<ProgressCallback>,
 ) -> Result<Vec<FoundFile>> {
     let tracker = ProgressTracker::new("deep_carve", total, cb);
@@ -53,7 +71,16 @@ fn deep_carve_mmap(
             .par_iter()
             .flat_map(|(start, end)| {
                 let chunk = &source_buf[*start..*end];
-                let local = scan_chunk(chunk, *start as u64, source, options, signatures);
+                let local = scan_chunk(
+                    chunk,
+                    *start as u64,
+                    source,
+                    source_fingerprint,
+                    options.mode,
+                    options.max_carve_size,
+                    options.signature_profile,
+                    signatures,
+                );
                 let chunk_bytes = (end - start) as u64;
                 tracker.add(chunk_bytes, format!("deep carving chunk {}-{}", start, end));
                 local
@@ -72,6 +99,7 @@ async fn deep_carve_streaming(
     source: &Path,
     options: &ScanOptions,
     signatures: &SignatureSet,
+    source_fingerprint: &str,
     cb: Option<ProgressCallback>,
 ) -> Result<Vec<FoundFile>> {
     let mut f = tokio::fs::File::open(source).await?;
@@ -97,7 +125,16 @@ async fn deep_carve_streaming(
         merged.extend_from_slice(&chunk);
 
         let start = offset.saturating_sub(carry.len() as u64);
-        findings.extend(scan_chunk(&merged, start, source, options, signatures));
+        findings.extend(scan_chunk(
+            &merged,
+            start,
+            source,
+            source_fingerprint,
+            options.mode,
+            options.max_carve_size,
+            options.signature_profile,
+            signatures,
+        ));
 
         if merged.len() > overlap {
             carry = merged[merged.len() - overlap..].to_vec();
@@ -120,10 +157,14 @@ fn scan_chunk(
     chunk: &[u8],
     base_offset: u64,
     source: &Path,
-    options: &ScanOptions,
+    source_fingerprint: &str,
+    mode: ScanMode,
+    max_carve_size: u64,
+    signature_profile: SignatureProfile,
     signatures: &SignatureSet,
 ) -> Vec<FoundFile> {
     let mut out = Vec::new();
+    let classifier = default_classifier();
 
     for idx in 0..chunk.len() {
         if let Some(candidates) = signatures.candidates_for_byte(chunk[idx]) {
@@ -138,21 +179,51 @@ fn scan_chunk(
                     None => continue,
                 };
 
+                let validation =
+                    structural_validation_score(&sig.definition.id, chunk, idx, signature_profile);
+                let sample_end = (idx + 256).min(chunk.len());
+                let ml_score = classifier.score(&FragmentSample {
+                    bytes: &chunk[idx..sample_end],
+                    signature_id: &sig.definition.id,
+                });
+                let validation_score = (validation * 0.7 + ml_score * 0.3).clamp(0.0, 1.0);
+                let confidence =
+                    ((0.62 + validation_score * 0.38).min(0.99) * 100.0).round() / 100.0;
+
                 out.push(FoundFile {
-                    id: format!("{}-{offset:016x}", sig.definition.id),
+                    id: build_finding_id(
+                        source_fingerprint,
+                        None,
+                        offset,
+                        &sig.definition.id,
+                        mode,
+                    ),
                     display_name: format!("{}_{}", sig.definition.name, offset),
                     extension: sig.definition.extension.clone(),
                     signature_id: sig.definition.id.clone(),
                     source_path: source.to_path_buf(),
+                    source_fingerprint: source_fingerprint.to_string(),
+                    evidence_path: source.to_path_buf(),
                     container_path: None,
                     offset,
                     size: sig
                         .definition
                         .default_size
-                        .unwrap_or(options.max_carve_size.min(16 * 1024 * 1024)),
-                    confidence: 0.81,
+                        .unwrap_or(max_carve_size.min(16 * 1024 * 1024)),
+                    confidence,
+                    validation_score,
                     category: sig.definition.category.clone(),
                     encrypted: false,
+                    encryption_state: EncryptionState::Unencrypted,
+                    reconstruction_context: Some(ReconstructionContext {
+                        volume_layer: VolumeLayer::Physical,
+                        reconstructed_path: None,
+                        notes: Some(format!(
+                            "signature-carved finding (validator={}, classifier={})",
+                            validation,
+                            classifier.name()
+                        )),
+                    }),
                     notes: sig.definition.description.clone(),
                 });
             }
