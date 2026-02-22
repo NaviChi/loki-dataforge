@@ -65,8 +65,21 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
+      - name: Detect Apple signing availability
+        id: apple_signing
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ "${{ matrix.platform }}" = "macos-universal" ] && [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and publish Tauri release (default/unsigned)
-        if: matrix.platform != 'macos-universal' || secrets.APPLE_CERTIFICATE == '' || secrets.APPLE_SIGNING_IDENTITY == ''
+        if: steps.apple_signing.outputs.enabled != 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -85,7 +98,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Build and publish Tauri release (macOS signed/notarized)
-        if: matrix.platform == 'macos-universal' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != ''
+        if: steps.apple_signing.outputs.enabled == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
