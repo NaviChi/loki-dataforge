@@ -65,7 +65,27 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
-      - name: Build and publish Tauri release
+      - name: Build and publish Tauri release (default/unsigned)
+        if: matrix.platform != 'macos-universal' || secrets.APPLE_CERTIFICATE == '' || secrets.APPLE_SIGNING_IDENTITY == ''
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "Loki Data Forge ${{ github.ref_name }}"
+          releaseBody: |
+            Automated Loki Data Forge release artifacts:
+            - Windows: EXE + MSI
+            - macOS: DMG + universal binary (notarization enabled when Apple secrets are present)
+            - Linux: AppImage + DEB + RPM
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+      - name: Build and publish Tauri release (macOS signed/notarized)
+        if: matrix.platform == 'macos-universal' && secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != ''
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
