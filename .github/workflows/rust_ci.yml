@@ -1,0 +1,33 @@
+name: Isolated Rust CI (Homebrew Bypass)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Rust Backend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+        
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+        
+    - name: Check Formatting
+      run: cargo fmt --all -- --check
+      
+    - name: Clippy Lints
+      run: cargo clippy --workspace -- -D warnings
+      
+    - name: Run Core Workspace Tests
+      # This completely isolates execution from local macOS Homebrew libgit2 code signature constraints
+      run: cargo test --workspace --verbose

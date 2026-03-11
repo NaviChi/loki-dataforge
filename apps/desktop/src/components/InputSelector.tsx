@@ -3,6 +3,7 @@ import { FolderOpen, HardDrive } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   browseInputLocations,
+  browseMacosDisks,
   browseOutputLocation,
   detectRaid,
   promptMissingRaidDialog,
@@ -112,6 +113,23 @@ export function InputSelector({
     }
   }
 
+  async function handleBrowseMacDisks(): Promise<void> {
+    try {
+      const selected = await browseMacosDisks();
+      if (selected.length === 0) {
+        onStatus('No native physical drives found via Disk Arbitration.');
+        return;
+      }
+
+      const merged = dedupePaths([...inputPaths, ...selected]);
+      onInputPathsChange(merged);
+      onStatus(`Discovered ${selected.length} native OS unmounted volume(s).`);
+      await runRaidDetection(merged);
+    } catch (error) {
+      onStatus(String(error));
+    }
+  }
+
   async function handleBrowseOutput(): Promise<void> {
     try {
       const selected = await browseOutputLocation();
@@ -144,9 +162,14 @@ export function InputSelector({
             className="mt-1 w-full rounded-xl border border-border bg-black/20 px-3 py-2 text-sm outline-none"
           />
         </div>
-        <Button onClick={() => void handleBrowseInput()} disabled={disabled || checkingRaid} className="h-[42px] gap-2">
-          <HardDrive size={14} /> Browse
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => void handleBrowseInput()} disabled={disabled || checkingRaid} className="h-[42px] gap-2 shadow-[0_0_15px_rgba(255,255,255,0.05)] hover:shadow-[0_0_15px_rgba(255,255,255,0.15)] transition-all">
+            <HardDrive size={14} /> Browse
+          </Button>
+          <Button onClick={() => void handleBrowseMacDisks()} disabled={disabled || checkingRaid} variant="secondary" className="h-[42px] gap-2 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors animate-pulse-border">
+            Native OS Disks
+          </Button>
+        </div>
       </div>
 
       {inputPaths.length > 0 && (

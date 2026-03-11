@@ -86,6 +86,9 @@ fn parse_mft_record(
     let status = if in_use { "active" } else { "deleted" };
     let dir_note = if is_directory { "directory" } else { "file" };
 
+    let entropies = crate::carver::calculate_rolling_shannon_entropy(bounded, bounded.len().max(1), bounded.len().max(1));
+    let entropy_val = entropies.first().copied().unwrap_or(0.0);
+
     Some(FoundFile {
         id: build_finding_id(source_fingerprint, None, absolute, signature_id, mode),
         display_name,
@@ -110,7 +113,7 @@ fn parse_mft_record(
             )),
         }),
         notes: Some(format!(
-            "Quick metadata recovery from NTFS MFT record #{record_number} ({status})"
+            "Quick metadata recovery from NTFS MFT record #{record_number} ({status}) [Entropy: {entropy_val:.4}]"
         )),
     })
 }

@@ -42,6 +42,7 @@ pub struct ScanRequest {
     pub case_id: Option<String>,
     pub legal_authority: Option<String>,
     pub adapter_policy: Option<String>,
+    pub heal_ransomware: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,6 +180,7 @@ pub async fn scan_command(
             signature_profile,
             encryption_policy: encryption_policy.clone(),
             adapter_policy,
+            heal_ransomware: request.heal_ransomware.unwrap_or(false),
             enable_bypass: request.enable_bypass.unwrap_or(false),
             case_id: request.case_id.clone(),
             legal_authority: request.legal_authority.clone(),
@@ -202,8 +204,8 @@ pub async fn scan_command(
 }
 
 #[tauri::command]
-pub async fn mount_container_command(path: String) -> Result<VirtualContainer, String> {
-    mount_container(PathBuf::from(path).as_path()).map_err(|e| e.to_string())
+pub async fn mount_container_command(path: String, heal: bool) -> Result<VirtualContainer, String> {
+    loki_data_forge_core::virtual_mount::mount_container_with_healing(PathBuf::from(path).as_path(), heal).map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -345,6 +347,16 @@ pub async fn browse_input_locations_command(app: AppHandle) -> Result<Vec<String
     };
 
     Ok(file_paths_to_strings(selected))
+}
+
+#[tauri::command]
+pub async fn browse_macos_disks_command() -> Result<Vec<String>, String> {
+    Ok(loki_data_forge_core::os_disks::get_macos_physical_drives())
+}
+
+#[tauri::command]
+pub async fn get_extraction_diagnostics_command(node_id: String) -> Result<loki_data_forge_core::telemetry::ExtractionDiagnostics, String> {
+    Ok(loki_data_forge_core::telemetry::gather_live_diagnostics(&node_id))
 }
 
 #[tauri::command]

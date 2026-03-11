@@ -38,7 +38,9 @@ fn main() -> Result<()> {
                 loki_data_forge_gui::detect_raid_command,
                 loki_data_forge_gui::browse_input_locations_command,
                 loki_data_forge_gui::browse_output_location_command,
-                loki_data_forge_gui::prompt_missing_raid_dialog_command
+                loki_data_forge_gui::prompt_missing_raid_dialog_command,
+                loki_data_forge_gui::browse_macos_disks_command,
+                loki_data_forge_gui::get_extraction_diagnostics_command
             ])
             .run(tauri::generate_context!())
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;

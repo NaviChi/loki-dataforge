@@ -43,6 +43,9 @@ pub enum Commands {
     /// Hex view helper
     Hex(HexArgs),
 
+    /// Connect to or host a QuicSwarm mesh peer
+    Mesh(MeshArgs),
+
     /// Launch GUI mode (when compiled with gui feature)
     Gui,
 }
@@ -115,7 +118,11 @@ pub struct ScanArgs {
         default_value = "hybrid",
         value_parser = ["native-only", "hybrid", "external-preferred"]
     )]
+    #[arg(long)]
     pub adapter_policy: String,
+
+    #[arg(long)]
+    pub heal_ransomware: bool,
 
     #[arg(long)]
     pub quiet: bool,
@@ -207,6 +214,18 @@ pub struct HexArgs {
 
     #[arg(long, default_value_t = 256)]
     pub length: u64,
+}
+
+#[derive(Debug, Args)]
+pub struct MeshArgs {
+    #[arg(long, value_name = "ADDRESS", required_unless_present = "connect")]
+    pub listen: Option<String>,
+
+    #[arg(long, value_name = "ADDRESS", required_unless_present = "listen")]
+    pub connect: Option<String>,
+
+    #[arg(long, value_name = "ID", default_value = "default-swarm-1")]
+    pub swarm_id: String,
 }
 
 fn default_threads() -> usize {

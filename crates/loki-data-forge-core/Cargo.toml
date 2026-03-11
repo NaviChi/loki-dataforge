@@ -8,14 +8,21 @@ repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 
+[features]
+portable_simd = []
+
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+wgpu.workspace = true
 ext4.workspace = true
 hex.workspace = true
 memmap2.workspace = true
 ntfs.workspace = true
 once_cell.workspace = true
+quinn.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
 rayon.workspace = true
 regex.workspace = true
 serde.workspace = true
@@ -30,7 +37,11 @@ tracing.workspace = true
 uuid.workspace = true
 walkdir.workspace = true
 zip.workspace = true
+bincode = "1.3.3"
 
 [dev-dependencies]
 anyhow.workspace = true
 tempfile = "3.17"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

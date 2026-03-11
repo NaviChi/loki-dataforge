@@ -137,6 +137,7 @@ pub async fn run_args(args: Vec<String>) -> anyhow::Result<CliExecution> {
                 enable_bypass: cmd.enable_bypass,
                 case_id: cmd.case_id.clone(),
                 legal_authority: cmd.legal_authority.clone(),
+                heal_ransomware: cmd.heal_ransomware,
             };
 
             let progress = if cmd.quiet {
@@ -297,6 +298,27 @@ pub async fn run_args(args: Vec<String>) -> anyhow::Result<CliExecution> {
                 file.read_exact(&mut slice)?;
             }
             println!("{}", hex_dump(&slice, start));
+        }
+        Commands::Mesh(cmd) => {
+            println!(
+                "Mesh scaffold executing natively on OS... Listen: {:?}, Connect: {:?}, Swarm ID: {}",
+                cmd.listen, cmd.connect, cmd.swarm_id
+            );
+            
+            // Wait for user or background interrupt
+            if let Some(listen_addr) = &cmd.listen {
+                let addr: std::net::SocketAddr = listen_addr.parse()?;
+                let _swarm = loki_data_forge_core::network::quic_swarm::QuicSwarm::bind(addr).await?;
+                println!("Listening on QUIC swarm port...");
+                tokio::signal::ctrl_c().await?;
+            } else if let Some(connect_addr) = &cmd.connect {
+                let addr: std::net::SocketAddr = connect_addr.parse()?;
+                let swarm = loki_data_forge_core::network::quic_swarm::QuicSwarm::bind("0.0.0.0:0".parse()?).await?;
+                println!("Connecting to QUIC swarm peer {}...", connect_addr);
+                let _connection = swarm.connect(addr, &cmd.swarm_id).await?;
+                println!("Connected to Swarm Peer {} successfully! Keep-alive active.", connect_addr);
+                tokio::signal::ctrl_c().await?;
+            }
         }
         Commands::Gui => {
             // Handled by the unified binary (tauri app).
@@ -554,6 +576,7 @@ mod tests {
             case_id: None,
             legal_authority: None,
             adapter_policy: "hybrid".to_string(),
+            heal_ransomware: false,
             quiet: false,
         };
 

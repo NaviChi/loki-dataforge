@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { HardDriveDownload, Search, Shield, Sparkles } from 'lucide-react';
+import { HardDriveDownload, Search, Shield, Sparkles, Network } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card } from './components/ui/card';
 import { Tabs } from './components/ui/tabs';
 import { InputSelector } from './components/InputSelector';
+import { NetworkDiskWizard } from './components/NetworkDiskWizard';
+import { QuicSwarmDashboard, type Peer } from './components/QuicSwarmDashboard';
+import { VirtualHealerHex } from './VirtualHealerUI';
 import {
   mountContainer,
   previewBytes,
@@ -54,6 +57,7 @@ export function App() {
   const [includeContainers, setIncludeContainers] = useState(true);
   const [strictContainers, setStrictContainers] = useState(false);
   const [signatureProfile, setSignatureProfile] = useState<'strict' | 'broad'>('strict');
+  const [healRansomware, setHealRansomware] = useState(false);
   const [adapterPolicy, setAdapterPolicy] = useState<
     'native-only' | 'hybrid' | 'external-preferred'
   >('hybrid');
@@ -70,6 +74,8 @@ export function App() {
   const [activeTab, setActiveTab] = useState<'wizard' | 'advanced'>('wizard');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('Ready. Read-only mode is enabled by default.');
+  const [showNetworkWizard, setShowNetworkWizard] = useState(false);
+  const [peers, setPeers] = useState<Peer[]>([]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -163,10 +169,11 @@ export function App() {
         enable_bypass: enableBypass,
         case_id: caseId.trim() ? caseId.trim() : undefined,
         legal_authority: legalAuthority.trim() ? legalAuthority.trim() : undefined,
+        heal_ransomware: healRansomware,
       });
 
       const mounted = includeContainers
-        ? await mountContainer(scanReport.source).catch(() => null)
+        ? await mountContainer(scanReport.source, healRansomware).catch(() => null)
         : null;
 
       setReport(scanReport);
@@ -221,25 +228,28 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#08111d] via-[#0f2230] to-[#1f3142] text-foreground transition-colors dark:from-[#08111d] dark:via-[#0f2230] dark:to-[#1f3142]">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-4 lg:p-6">
-        <header className="grid gap-3 rounded-2xl border border-border/70 bg-black/20 p-4 backdrop-blur-sm md:grid-cols-[1fr_auto] md:items-center">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-4 p-4 lg:p-6 pb-20">
+        <header className="grid gap-3 rounded-2xl p-4 md:grid-cols-[1fr_auto] md:items-center aerospace-ui-glass glass-accent-glow z-10 transition-all duration-300">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.2em] text-foreground/70">Loki Data Forge</p>
             <h1 className="text-2xl font-semibold">Forensic Data Recovery Orchestrator</h1>
             <p className="text-sm text-foreground/70">Quick MFT/inode triage, deep carving, virtual-disk/container inspection, and safe recoveries.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            <Button variant="secondary" onClick={() => setShowNetworkWizard(true)} className="gap-2 h-9 px-3 py-1 text-xs hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors animate-fade-up">
+              <Network size={14} /> Mesh Setup
+            </Button>
+            <Button variant="secondary" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} data-testid="theme-toggle-btn">
               {theme === 'dark' ? 'Light' : 'Dark'} theme
             </Button>
-            <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-100">
+            <div data-testid="readonly-badge" className="rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-100">
               Read-only Default
             </div>
           </div>
         </header>
 
         <section className="grid gap-4 lg:grid-cols-[430px_1fr]">
-          <Card className="space-y-4 animate-fade-up">
+          <Card className="space-y-4 animate-fade-up aerospace-ui-glass relative group overflow-hidden">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Scan Console</h2>
               <Tabs
@@ -268,9 +278,9 @@ export function App() {
                 />
 
                 <div className="grid grid-cols-3 gap-2">
-                  <Button variant={mode === 'quick' ? 'default' : 'secondary'} onClick={() => setMode('quick')}>Quick</Button>
-                  <Button variant={mode === 'deep' ? 'default' : 'secondary'} onClick={() => setMode('deep')}>Deep</Button>
-                  <Button variant={mode === 'hybrid' ? 'default' : 'secondary'} onClick={() => setMode('hybrid')}>Hybrid</Button>
+                  <Button data-testid="mode-quick-btn" variant={mode === 'quick' ? 'default' : 'secondary'} onClick={() => setMode('quick')}>Quick</Button>
+                  <Button data-testid="mode-deep-btn" variant={mode === 'deep' ? 'default' : 'secondary'} onClick={() => setMode('deep')}>Deep</Button>
+                  <Button data-testid="mode-hybrid-btn" variant={mode === 'hybrid' ? 'default' : 'secondary'} onClick={() => setMode('hybrid')}>Hybrid</Button>
                 </div>
               </div>
             ) : (
@@ -278,6 +288,7 @@ export function App() {
                 <label className="block">
                   <span className="mb-1 block text-foreground/80">Threads</span>
                   <input
+                    data-testid="advanced-threads-input"
                     type="number"
                     value={threads}
                     min={1}
@@ -317,6 +328,10 @@ export function App() {
                 <label className="flex items-center gap-2 text-foreground/80">
                   <input type="checkbox" checked={strictContainers} onChange={(e) => setStrictContainers(e.target.checked)} />
                   Strict container parsing (fail on malformed containers)
+                </label>
+                <label className="flex items-center gap-2 text-rose-300 font-semibold mt-2 mb-2 p-2 bg-rose-900/20 rounded-lg border border-rose-500/30">
+                  <input data-testid="heal-ransomware-checkbox" type="checkbox" checked={healRansomware} onChange={(e) => setHealRansomware(e.target.checked)} />
+                  HEAL Ransomware (VMDK/VHDX redundant header repair / block blind-map substitution)
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-foreground/80">Signature profile</span>
@@ -400,20 +415,20 @@ export function App() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <Button onClick={handleScan} disabled={busy} className="gap-2">
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <Button data-testid="run-scan-btn" onClick={handleScan} disabled={busy} className="gap-2 shadow-xl animate-pulse-border hover:brightness-125 transition-all">
                 <Search size={14} /> Run Scan
               </Button>
-              <Button onClick={handleRecover} disabled={busy || !report} variant="secondary" className="gap-2">
+              <Button data-testid="recover-btn" onClick={handleRecover} disabled={busy || !report} variant="secondary" className="gap-2">
                 <HardDriveDownload size={14} /> Recover
               </Button>
             </div>
 
-            <p className="rounded-xl border border-border/80 bg-black/20 p-3 text-xs text-foreground/80">{status}</p>
+            <p data-testid="status-message" className="rounded-xl border border-border/80 bg-black/20 p-3 text-xs text-foreground/80">{status}</p>
           </Card>
 
           <div className="grid gap-4">
-            <Card className="animate-fade-up [animation-delay:80ms]">
+            <Card className="animate-fade-up [animation-delay:80ms] aerospace-ui-glass z-10">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Findings</h2>
                 <div className="flex items-center gap-2 text-xs text-foreground/70">
@@ -486,9 +501,33 @@ export function App() {
                   )}
                 </div>
               </Card>
+
+              {container?.descriptor?.includes('HEALED') && (
+                <div className="xl:col-span-2">
+                  <VirtualHealerHex container={container} sourceFilePath={report?.source ?? inputSources[0]} />
+                </div>
+              )}
             </div>
+            
+            <QuicSwarmDashboard peers={peers} />
           </div>
         </section>
+
+        {showNetworkWizard && (
+          <NetworkDiskWizard
+            onClose={() => setShowNetworkWizard(false)}
+            onAddPeer={(address, swarmId) => {
+              setStatus(`Initializing QuicSwarm connection to ${address} via ${swarmId}...`);
+              setPeers(prev => [...prev, { address, swarmId, status: 'Connecting' }]);
+              // Mock success after connection
+              setTimeout(() => {
+                setPeers(prev => prev.map(p => 
+                  p.address === address ? { ...p, status: 'Connected', latency: Math.floor(Math.random() * 50) + 10 } : p
+                ));
+              }, 1500);
+            }}
+          />
+        )}
 
         <footer className="grid gap-2 rounded-2xl border border-border/70 bg-black/20 p-3 text-xs text-foreground/70 md:grid-cols-3 md:items-center">
           <div className="flex items-center gap-2"><Shield size={14} /> Recoveries enforced to separate destination</div>

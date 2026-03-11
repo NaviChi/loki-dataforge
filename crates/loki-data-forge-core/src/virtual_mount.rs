@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{LokiDataForgeError, Result};
 use crate::models::{ContainerType, VirtualContainer, VirtualEntry};
 use crate::parsers::vpk::parse_vpk_entries;
+use crate::virtual_healer::heal_virtual_container;
 
 pub fn detect_container(path: &Path) -> Result<ContainerType> {
     let mut f = File::open(path)?;
@@ -100,8 +101,16 @@ pub fn detect_container(path: &Path) -> Result<ContainerType> {
     Ok(ContainerType::Unknown)
 }
 
-pub fn mount_container(path: &Path) -> Result<VirtualContainer> {
-    let kind = detect_container(path)?;
+pub fn mount_container_with_healing(path: &Path, heal: bool) -> Result<VirtualContainer> {
+    let kind_result = detect_container(path);
+    
+    // If ransomware destroyed the header, detection will fail or return Unknown.
+    // If healing is enabled, bypass and invoke VirtualHealer.
+    if heal && (kind_result.is_err() || kind_result.as_ref().is_ok_and(|k| *k == ContainerType::Unknown)) {
+        return heal_virtual_container(path, None);
+    }
+    
+    let kind = kind_result?;
 
     match kind {
         ContainerType::Vmdk => mount_vmdk(path),
@@ -130,6 +139,10 @@ pub fn mount_container(path: &Path) -> Result<VirtualContainer> {
             descriptor: Some("Container detected (TODO: parser expansion)".to_string()),
         }),
     }
+}
+
+pub fn mount_container(path: &Path) -> Result<VirtualContainer> {
+    mount_container_with_healing(path, false)
 }
 
 fn mount_vmdk(path: &Path) -> Result<VirtualContainer> {
@@ -271,6 +284,14 @@ fn mount_vhdx(path: &Path) -> Result<VirtualContainer> {
     let creator = String::from_utf16(&creator_utf16).unwrap_or_else(|_| "unknown".to_string());
 
     let size = std::fs::metadata(path)?.len();
+    
+    let entropies = crate::carver::calculate_rolling_shannon_entropy(&hdr, 4096, 4096);
+    let entropy_note = if let Some(e) = entropies.first() {
+        format!(", header_entropy={:.4}", e)
+    } else {
+        String::new()
+    };
+
     Ok(VirtualContainer {
         source: path.to_path_buf(),
         container_type: ContainerType::Vhdx,
@@ -286,7 +307,7 @@ fn mount_vhdx(path: &Path) -> Result<VirtualContainer> {
             encrypted: false,
             archive_index: None,
         }],
-        descriptor: Some(format!("VHDX container detected, creator={creator}")),
+        descriptor: Some(format!("VHDX container detected, creator={creator}{entropy_note}")),
     })
 }
 

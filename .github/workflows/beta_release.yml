@@ -1,0 +1,66 @@
+name: Beta Release (1.0-RC)
+
+on:
+  push:
+    tags:
+      - 'v1.0.0-rc*'
+
+jobs:
+  publish-beta:
+    timeout-minutes: 90
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: 'apps/desktop/package-lock.json'
+        
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: >-
+          ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          
+    - name: Install Ubuntu Dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: 'apps/desktop/src-tauri -> target'
+        
+    - name: Install NPM dependencies
+      working-directory: apps/desktop
+      run: npm ci
+      
+    - name: Build React App
+      working-directory: apps/desktop
+      run: npm run build
+      
+    - name: Build Tauri 1.0 RC Beta
+      working-directory: apps/desktop
+      run: npm run tauri build
+      
+    - name: Publish Draft Release
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: true
+        prerelease: true
+        name: Loki Data Forge ${{ github.ref_name }}
+        files: |
+          apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          apps/desktop/src-tauri/target/release/bundle/deb/*.deb
+          apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage

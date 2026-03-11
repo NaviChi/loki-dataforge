@@ -107,6 +107,19 @@ export interface RaidDetectionReport {
   notes: string[];
 }
 
+export interface ExtractionDiagnostics {
+  node_id: string;
+  timestamp: number;
+  total_bytes_extracted: number;
+  current_throughput_mbps: number;
+  active_multipath_links: number;
+  af_xdp_zero_copy_active: boolean;
+  wgpu_markov_active: boolean;
+  hypervisor_introspection_active: boolean;
+  average_latency_ms: number;
+  packet_drop_rate: number;
+}
+
 export async function runScan(payload: {
   source?: string;
   sources?: string[];
@@ -125,12 +138,13 @@ export async function runScan(payload: {
   case_id?: string;
   legal_authority?: string;
   adapter_policy?: 'native-only' | 'hybrid' | 'external-preferred';
+  heal_ransomware?: boolean;
 }): Promise<ScanReport> {
   return invoke<ScanReport>('scan_command', { request: payload });
 }
 
-export async function mountContainer(path: string): Promise<VirtualContainer> {
-  return invoke<VirtualContainer>('mount_container_command', { path });
+export async function mountContainer(path: string, heal: boolean = false): Promise<VirtualContainer> {
+  return invoke<VirtualContainer>('mount_container_command', { path, heal });
 }
 
 export async function recoverFromLast(payload: {
@@ -147,6 +161,14 @@ export async function previewBytes(source: string, offset: number, length: numbe
 
 export async function browseInputLocations(): Promise<string[]> {
   return invoke<string[]>('browse_input_locations_command');
+}
+
+export async function browseMacosDisks(): Promise<string[]> {
+  return invoke<string[]>('browse_macos_disks_command');
+}
+
+export async function getExtractionDiagnostics(nodeId: string): Promise<ExtractionDiagnostics> {
+  return invoke<ExtractionDiagnostics>('get_extraction_diagnostics_command', { nodeId });
 }
 
 export async function browseOutputLocation(): Promise<string | null> {

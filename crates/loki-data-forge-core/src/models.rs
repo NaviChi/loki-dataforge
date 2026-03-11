@@ -105,6 +105,8 @@ pub struct ScanOptions {
     pub case_id: Option<String>,
     #[serde(default)]
     pub legal_authority: Option<String>,
+    #[serde(default)]
+    pub heal_ransomware: bool,
 }
 
 impl Default for ScanOptions {
@@ -129,6 +131,7 @@ impl Default for ScanOptions {
             enable_bypass: false,
             case_id: None,
             legal_authority: None,
+            heal_ransomware: false,
         }
     }
 }

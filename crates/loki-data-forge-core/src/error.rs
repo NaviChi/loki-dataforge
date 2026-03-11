@@ -27,6 +27,12 @@ pub enum LokiDataForgeError {
     #[error("invalid scan options: {0}")]
     InvalidScanOptions(String),
 
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Network layer error: {0}")]
+    NetworkLayer(String),
+
     #[error("container parse error: {0}")]
     ContainerParse(String),
 

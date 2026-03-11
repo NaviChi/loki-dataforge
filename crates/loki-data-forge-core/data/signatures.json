@@ -430,6 +430,86 @@
     "default_size": 8388608
   },
   {
+    "id": "sig-exotic-red",
+    "name": "RED Digital Cinema (R3D)",
+    "extension": "r3d",
+    "magic": "52 45 44 31",
+    "offset": 4,
+    "category": "video",
+    "description": "High-end RED RAW digital cinema file",
+    "default_size": 268435456
+  },
+  {
+    "id": "sig-exotic-arri",
+    "name": "ARRI RAW Image",
+    "extension": "ari",
+    "magic": "41 52 52 49",
+    "offset": 0,
+    "category": "video",
+    "description": "ARRI RED RAW digital camera file",
+    "default_size": 134217728
+  },
+  {
+    "id": "sig-exotic-dicom",
+    "name": "DICOM Medical Imaging",
+    "extension": "dcm",
+    "magic": "44 49 43 4d",
+    "offset": 128,
+    "category": "image",
+    "description": "DICOM aerospace/medical imaging standard",
+    "default_size": 33554432
+  },
+  {
+    "id": "sig-exotic-wal",
+    "name": "SQLite Write-Ahead Log",
+    "extension": "wal",
+    "magic": "37 7f 06 82",
+    "offset": 0,
+    "category": "database",
+    "description": "SQLite WAL file (uncommitted txns)",
+    "default_size": 33554432
+  },
+  {
+    "id": "sig-exotic-leveldb",
+    "name": "LevelDB / RocksDB SSTable",
+    "extension": "sst",
+    "magic": "57 fb 80 8b 24 75 47 db",
+    "offset": 0,
+    "category": "database",
+    "description": "Google LevelDB/RocksDB Storage",
+    "default_size": 67108864
+  },
+  {
+    "id": "sig-exotic-squashfs",
+    "name": "SquashFS Image (Docker/IoT)",
+    "extension": "sqsh",
+    "magic": "68 73 71 73",
+    "offset": 0,
+    "category": "archive",
+    "description": "SquashFS filesystem (often in IoT/Docker base layers)",
+    "default_size": 134217728
+  },
+  {
+    "id": "sig-exotic-parquet",
+    "name": "Apache Parquet",
+    "extension": "parquet",
+    "magic": "50 41 52 31",
+    "offset": 0,
+    "category": "database",
+    "description": "Parquet columnar storage",
+    "default_size": 67108864
+  },
+  {
+    "id": "sig-exotic-aes",
+    "name": "AES Crypt payload",
+    "extension": "aes",
+    "magic": "41 45 53",
+    "offset": 0,
+    "category": "archive",
+    "description": "AES Encrypted payload",
+    "default_size": 16777216
+  },
+  {
     "id": "sig-generated-0001",
     "name": "Generated Signature 0001",
     "extension": "bin",
